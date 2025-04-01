@@ -1,5 +1,6 @@
 package io.modelcontextprotocol.kotlin.sdk.client
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.modelcontextprotocol.kotlin.sdk.*
 import io.modelcontextprotocol.kotlin.sdk.LoggingMessageNotification.SetLevelRequest
 import io.modelcontextprotocol.kotlin.sdk.shared.Protocol
@@ -10,6 +11,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * Options for configuring the MCP client.
@@ -55,6 +58,19 @@ public open class Client(
         private set
 
     private val capabilities: ClientCapabilities = options.capabilities
+
+    private val roots = mutableMapOf<String, Root>()
+
+    init {
+        logger.debug { "Initializing MCP client with capabilities: $capabilities" }
+
+        // Internal handlers for roots
+        if (capabilities.roots != null) {
+            setRequestHandler<ListToolsRequest>(Method.Defined.RootsList) { _, _ ->
+                handleListRoots()
+            }
+        }
+    }
 
     protected fun assertCapability(capability: String, method: String) {
         val caps = serverCapabilities
@@ -207,6 +223,25 @@ public open class Client(
 
             else -> {}
         }
+    }
+
+    /**
+     * Registers a single root
+     *
+     * @param uri Unique identifier for the root.
+     * @param name Optional human-readable name for display purposes.
+     * @throws IllegalStateException If the client does not support roots.
+     */
+    public fun addRoot(
+        uri: String,
+        name: String? = null,
+    ) {
+        if (capabilities.roots == null) {
+            logger.error { "Failed to add roots '$uri': Client does not support roots capability" }
+            throw IllegalStateException("Client does not support roots capability. Enable it in ClientOptions.")
+        }
+        logger.info { "Registering root: $uri" }
+        roots[uri] = Root(uri, name)
     }
 
 
@@ -421,5 +456,11 @@ public open class Client(
      */
     public suspend fun sendRootsListChanged() {
         notification(RootsListChangedNotification())
+    }
+
+    // --- Internal Handlers ---
+    private suspend fun handleListRoots(): ListRootsResult {
+        val rootList = roots.values.map { it }
+        return ListRootsResult(roots = rootList)
     }
 }
